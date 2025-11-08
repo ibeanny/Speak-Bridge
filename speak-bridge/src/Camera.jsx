@@ -39,8 +39,14 @@
 
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                // Draw the video frame
+                // Mirror the image horizontally like a selfie
+                ctx.save();
+                ctx.scale(-1, 1);
+                ctx.translate(-canvas.width, 0);
+
+                // Draw the mirrored video frame
                 ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
 
                 if (results.multiHandLandmarks) {
                     const HAND_CONNECTIONS = [
@@ -72,7 +78,12 @@
                 } else {
                     setGestures("No hands detected");
                 }
+
+                // End mirroring (restore original drawing state)
+                ctx.restore();
             });
+
+
 
             // Start webcam
             const startCamera = async () => {
