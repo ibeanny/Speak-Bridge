@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Hands } from "@mediapipe/hands";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
-const FRAME_SEND_INTERVAL_MS = 800; // send ~1.25 frames per second
+const FRAME_SEND_INTERVAL_MS = 1600; // send ~1.25 frames per second
 
 // 🔹 ADDED: configurable API base (falls back to localhost)
 const API_BASE = import.meta.env?.VITE_API_BASE || "http://localhost:8000";
@@ -38,79 +38,87 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
    * - Uses throttle + non-blocking behavior to avoid lag
    * - 🔹 ADDED: Starts SSE stream and appends tokens to onRecognizedText
    */
-  const sendFrameToBackend = (canvas) => {
+   const getScaledBlob = (canvas, maxW = 640, maxH = 480, mime = "image/png", quality = 0.9) =>
+     new Promise((resolve) => {
+       const tmp = document.createElement("canvas");
+       const s = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
+       tmp.width = Math.round(canvas.width * s);
+       tmp.height = Math.round(canvas.height * s);
+       tmp.getContext("2d").drawImage(canvas, 0, 0, tmp.width, tmp.height);
+       tmp.toBlob((blob) => resolve(blob), mime, quality);
+     });
+
+  const sendFrameToBackend = async (canvas) => {
     if (!canvas) return;
-    if (isSendingRef.current) return; // skip if already sending
+    if (isSendingRef.current) return;
     isSendingRef.current = true;
 
-    canvas.toBlob((blob) => {
-      if (!blob) {
-        isSendingRef.current = false;
-        return;
-      }
+    try {
+      // use the **downscaled** blob
+      const blob = await getScaledBlob(canvas, 640, 480, "image/png", 0.9);
+      if (!blob) return;
 
       const fd = new FormData();
       fd.append("frame", blob, "frame.png");
 
-      // (keep) Fire-and-forget write to /api/stream/frame (latest.png)
-      fetch(`${API_BASE}/api/stream/frame`, {
-        method: "POST",
-        body: fd,
-      }).catch((err) => {
-        console.warn("Failed to send frame:", err);
-      }).finally(() => {
-        isSendingRef.current = false; // done sending
-      });
+      // (keep) update latest.png for debugging
+      fetch(`${API_BASE}/api/stream/frame`, { method: "POST", body: fd })
+        .catch((err) => console.warn("Failed to send frame:", err));
 
-      // 🔹 ADDED: Start/Restart SSE stream to get NeuralSeek tokens
-      // Clear existing text at the start of a new stream
+      // clear textbox at the start of a new stream
       onRecognizedText?.("");
 
-      // Abort any previous in-flight stream to avoid overlaps
+      // abort prior stream to avoid overlap
       try { streamAbortRef.current?.abort(); } catch {}
       streamAbortRef.current = new AbortController();
 
-      fetch(`${API_BASE}/api/stream/frame-sse`, {
+      const res = await fetch(`${API_BASE}/api/stream/frame-sse`, {
         method: "POST",
         body: fd,
         signal: streamAbortRef.current.signal,
-      })
-        .then(async (res) => {
-          // Stream the response body and append "data: ..." tokens
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
+      });
 
-          while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+      // if server rejected, show the reason in the textbox and bail
+      if (!res.ok) {
+        const body = await res.text();
+        onRecognizedText?.((prev) => (prev || "") + `\n[stream http ${res.status}] ${body.slice(0, 400)}`);
+        return;
+      }
 
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop() || "";
+      // stream tokens
+      const reader = res.body?.getReader?.();
+      if (!reader) {
+        onRecognizedText?.((p) => (p || "") + "\n[stream error] Reader not available (browser issue)");
+        return;
+      }
 
-            for (const part of parts) {
-              if (part.startsWith("data: ")) {
-                const token = part.slice(6);
-                // 🔹 ADDED: append tokens to your parent textbox
-                onRecognizedText?.((prev) =>
-                  typeof prev === "string" ? prev + token : token
-                );
-              }
-            }
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          if (part.startsWith("data: ")) {
+            const token = part.slice(6);
+            onRecognizedText?.((prev) => (typeof prev === "string" ? prev + token : token));
           }
-        })
-        .catch((err) => {
-          if (err?.name !== "AbortError") {
-            console.error("SSE stream error:", err);
-            onGesturesChange?.("Stream error");
-            // 🔹 ADDED: surface errors in the textbox too
-            onRecognizedText?.((prev) =>
-              (prev || "") + `\n[stream error] ${String(err)}`
-            );
-          }
-        });
-    }, "image/png");
+        }
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        console.error("SSE stream error:", err);
+        onGesturesChange?.("Stream error");
+        onRecognizedText?.((prev) => (prev || "") + `\n[stream error] ${String(err)}`);
+      }
+    } finally {
+      isSendingRef.current = false;
+    }
   };
 
   /**
