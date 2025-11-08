@@ -14,27 +14,29 @@ function App() {
             <div className="w-full max-w-6xl bg-[#1a1028] border border-[#3c1361] rounded-2xl shadow-[0_20px_60px_rgba(64,0,128,0.6)] overflow-hidden flex flex-col">
 
                 {/* HEADER */}
-                <header className="flex items-center px-4 md:px-6 h-[48px] border-b border-[#3c1361] bg-transparent">
-                    <div className="flex items-center gap-2">
-                        {/* Icon */}
-                        <div className="h-9 w-9 rounded-lg bg-[#4c1d95]/30 flex items-center justify-center text-lg md:text-xl font-bold text-purple-200 shadow-[0_0_10px_rgba(147,51,234,0.8)]">
+                <header className="flex items-center px-4 md:px-6 py-1.5 border-b border-[#3c1361] bg-transparent mt-0">
+
+                    <div className="flex items-center gap-2 py-1">
+                        <div
+                            className="h-10 w-10 rounded-xl bg-[#4c1d95]/30 flex items-center justify-center text-lg md:text-xl font-bold text-purple-200 shadow-[0_0_10px_rgba(147,51,234,0.8)]">
                             SB
                         </div>
-                        {/* Title */}
-                        <h1 className="m-0 text-xl md:text-2xl font-bold text-white leading-none">
-                            Speak Bridge
+                        <h1 className="m-0 text-xl md:text-2xl font-bold text-purple-200 leading-none ">
+                            SpeakBridge
                         </h1>
                     </div>
                 </header>
 
+
                 {/* MAIN */}
                 <main className="px-4 md:px-6 py-3 bg-[#1a1028]">
-                    <div className="grid md:grid-cols-2 gap-4">
+                <div className="grid md:grid-cols-2 gap-4">
 
                         {/* LEFT COLUMN: Camera + Hands Detected */}
                         <div className="flex flex-col gap-2">
                             {/* Camera */}
-                            <div className="bg-[#2a1b3d] border border-[#4c1d95] rounded-xl overflow-hidden shadow-[0_0_25px_rgba(147,51,234,0.3)]">
+                            <div
+                                className="bg-[#2a1b3d] border border-[#4c1d95] rounded-xl overflow-hidden shadow-[0_0_25px_rgba(147,51,234,0.3)]">
                                 <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#4c1d95]/50 text-[0.7rem] text-purple-200/70">
                   <span className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full bg-purple-400" />

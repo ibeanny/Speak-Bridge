@@ -1,18 +1,45 @@
-import React, { useEffect, useRef } from "react";
-import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
+import React, { useEffect, useRef, useState } from "react";
+import { Hands } from "@mediapipe/hands";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
-const CameraFeed = ({ onGesturesChange, canvasClassName = "" }) => {
+const HAND_CONNECTIONS = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+];
+
+export default function CameraFeed({ onGesturesChange, canvasClassName }) {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const handsRef = useRef(null);
     const requestRef = useRef(null);
 
+    const [gestures, setGestures] = useState("Starting camera...");
+
+    // --- send each frame to backend
+    const sendFrameToBackend = async (canvas) => {
+        if (!canvas) return;
+
+        canvas.toBlob(async (blob) => {
+            if (!blob) return;
+            const fd = new FormData();
+            fd.append("frame", blob, "frame.png");
+            try {
+                await fetch("http://localhost:8000/api/stream/frame", {
+                    method: "POST",
+                    body: fd,
+                });
+            } catch (err) {
+                console.warn("Failed to send frame:", err);
+            }
+        }, "image/png");
+    };
+
     useEffect(() => {
-        // Initialize MediaPipe Hands
         handsRef.current = new Hands({
-            locateFile: (file) =>
-                `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
         });
 
         handsRef.current.setOptions({
@@ -22,112 +49,128 @@ const CameraFeed = ({ onGesturesChange, canvasClassName = "" }) => {
             minTrackingConfidence: 0.5,
         });
 
-        handsRef.current.onResults((results) => {
+        handsRef.current.onResults(async (results) => {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext("2d");
+            const video = videoRef.current;
+            if (!video) return;
 
-            if (!videoRef.current) return;
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
 
-            canvas.width = videoRef.current.videoWidth;
-            canvas.height = videoRef.current.videoHeight;
-
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Mirror like a selfie
+            // --- Mirror the canvas horizontally (selfie-style)
             ctx.save();
             ctx.scale(-1, 1);
             ctx.translate(-canvas.width, 0);
 
-            // Draw the mirrored video frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const customConnections = [
-                    [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
-                    [0, 5], [5, 6], [6, 7], [7, 8],       // Index
-                    [0, 9], [9, 10], [10, 11], [11, 12],  // Middle
-                    [0, 13], [13, 14], [14, 15], [15, 16],// Ring
-                    [0, 17], [17, 18], [18, 19], [19, 20] // Pinky
-                ];
+            if (results.multiHandLandmarks?.length > 0) {
+                results.multiHandLandmarks.forEach((lm, idx) => {
+                    drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: "#00FF88", lineWidth: 4 });
+                    drawLandmarks(ctx, lm, { color: "#FF3355", lineWidth: 2 });
 
-                for (const landmarks of results.multiHandLandmarks) {
-                    drawConnectors(ctx, landmarks, customConnections, {
-                        color: "#00FF00",
-                        lineWidth: 5,
-                    });
-                    drawLandmarks(ctx, landmarks, { color: "#FF0000", lineWidth: 2 });
+                    if (results.multiHandedness && results.multiHandedness[idx]) {
+                        const confidence = results.multiHandedness[idx].score; // 0 to 1
 
-                    // Flatten landmarks (for future model)
-                    const inputVector = landmarks.flatMap((l) => [l.x, l.y, l.z]);
-                    // TODO: use inputVector with TF model
+                        // --- bounding box around hand
+                        const xs = lm.map(p => p.x * canvas.width);
+                        const ys = lm.map(p => p.y * canvas.height);
+                        const minX = Math.min(...xs);
+                        const maxX = Math.max(...xs);
+                        const minY = Math.min(...ys);
+                        const maxY = Math.max(...ys);
 
-                    const msg = `Detected hands: ${results.multiHandLandmarks.length}`;
-                    if (onGesturesChange) onGesturesChange(msg);
+                        const boxWidth = maxX - minX;
+                        const boxHeight = maxY - minY;
+
+                        // --- draw box
+                        ctx.strokeStyle = "yellow";
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(minX, minY, boxWidth, boxHeight);
+
+                        // --- draw confidence bar at top of box
+                        const barWidth = boxWidth * confidence;
+                        const barHeight = 6;
+
+                        // background
+                        ctx.fillStyle = "rgba(0,0,0,0.5)";
+                        ctx.fillText(`${((confidence*100).toFixed(1))}%`, minX + 4, minY - barHeight - 6);
+                        ctx.fillRect(minX, minY - barHeight - 2, boxWidth, barHeight);
+
+                        // fill
+                        ctx.fillStyle = "yellow";
+                        ctx.fillRect(minX, minY - barHeight - 2, barWidth, barHeight);
+
+                        // optional text
+                        ctx.fillStyle = "white";
+                        ctx.font = "12px Arial";
+                        ctx.fillText(`${(confidence*100).toFixed(1)}%`, minX + 4, minY - barHeight - 6);
+                    }
+                });
+
+                const msg = `Detected Hands: ${results.multiHandLandmarks.length}`;
+                setGestures(msg);
+                if (onGesturesChange) {
+                    onGesturesChange(msg);
                 }
+
+                await sendFrameToBackend(canvas);
             } else {
-                if (onGesturesChange) onGesturesChange("No hands detected");
+                const msg = "No hands detected";
+                setGestures(msg);
+                if (onGesturesChange) {
+                    onGesturesChange(msg);
+                }
             }
 
+            // --- restore after flipping
             ctx.restore();
         });
 
-        // Start webcam
-        const startCamera = async () => {
+        (async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: true,
-                    audio: false,
-                });
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                videoRef.current.srcObject = stream;
+                videoRef.current.onloadedmetadata = () => {
+                    videoRef.current.play();
 
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-
-                    videoRef.current.onloadedmetadata = () => {
-                        videoRef.current.play();
-
-                        const processFrame = async () => {
-                            if (handsRef.current) {
-                                await handsRef.current.send({ image: videoRef.current });
-                            }
-                            requestRef.current = requestAnimationFrame(processFrame);
-                        };
-
-                        requestRef.current = requestAnimationFrame(processFrame);
+                    const loop = async () => {
+                        await handsRef.current.send({ image: videoRef.current });
+                        requestRef.current = requestAnimationFrame(loop);
                     };
-                }
+                    requestRef.current = requestAnimationFrame(loop);
+                };
             } catch (err) {
-                console.error("Error accessing camera: ", err);
-                if (onGesturesChange) onGesturesChange("Error accessing camera");
+                console.error("Camera error:", err);
+                const msg = "Camera access denied";
+                setGestures(msg);
+                if (onGesturesChange) {
+                    onGesturesChange(msg);
+                }
             }
-        };
+        })();
 
-        startCamera();
-
-        // Cleanup
         return () => {
-            if (videoRef.current && videoRef.current.srcObject) {
-                const tracks = videoRef.current.srcObject.getTracks();
-                tracks.forEach((track) => track.stop());
-            }
-            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            cancelAnimationFrame(requestRef.current);
+            videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
         };
     }, [onGesturesChange]);
 
     return (
-        <>
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{ display: "none" }} // still hidden, we only show the canvas
-            />
+        <div>
+            <video ref={videoRef} autoPlay playsInline muted style={{ display: "none" }} />
             <canvas
                 ref={canvasRef}
                 className={canvasClassName}
+                style={{
+                    width: "640px",
+                    borderRadius: "12px",
+                    backgroundColor: "#1e1e1e",
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
+                }}
             />
-        </>
+        </div>
     );
-};
-
-export default CameraFeed;
+}
