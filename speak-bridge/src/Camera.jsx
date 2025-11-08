@@ -1,16 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Hands,HAND_CONNECTIONS} from "@mediapipe/hands";
+import React, { useEffect, useRef } from "react";
+import { Hands, HAND_CONNECTIONS } from "@mediapipe/hands";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
-const CameraFeed = () => {
+const CameraFeed = ({ onGesturesChange, canvasClassName = "" }) => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const handsRef = useRef(null);
-    const requestRef = useRef(null);    
-    const [gestures, setGestures] = useState("");
+    const requestRef = useRef(null);
 
     useEffect(() => {
-        //Initialize MediaPipe Hands
+        // Initialize MediaPipe Hands
         handsRef.current = new Hands({
             locateFile: (file) =>
                 `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
@@ -22,6 +21,7 @@ const CameraFeed = () => {
             minDetectionConfidence: 0.7,
             minTrackingConfidence: 0.5,
         });
+
         handsRef.current.onResults((results) => {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext("2d");
@@ -33,7 +33,7 @@ const CameraFeed = () => {
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Mirror the image horizontally like a selfie
+            // Mirror like a selfie
             ctx.save();
             ctx.scale(-1, 1);
             ctx.translate(-canvas.width, 0);
@@ -41,9 +41,8 @@ const CameraFeed = () => {
             // Draw the mirrored video frame
             ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-            // 👇 Only change: also require at least one landmark set
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                const HAND_CONNECTIONS = [
+                const customConnections = [
                     [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
                     [0, 5], [5, 6], [6, 7], [7, 8],       // Index
                     [0, 9], [9, 10], [10, 11], [11, 12],  // Middle
@@ -52,25 +51,21 @@ const CameraFeed = () => {
                 ];
 
                 for (const landmarks of results.multiHandLandmarks) {
-                    // Draw hand landmarks
-                    drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {
+                    drawConnectors(ctx, landmarks, customConnections, {
                         color: "#00FF00",
                         lineWidth: 5,
                     });
                     drawLandmarks(ctx, landmarks, { color: "#FF0000", lineWidth: 2 });
 
-                    // Flatten landmarks for TensorFlow
+                    // Flatten landmarks (for future model)
                     const inputVector = landmarks.flatMap((l) => [l.x, l.y, l.z]);
+                    // TODO: use inputVector with TF model
 
-                    // TODO: Feed inputVector into your TensorFlow gesture model
-                    // const prediction = yourTFModel.predict(tf.tensor([inputVector]));
-                    // setGestures(predictedGesture);
-
-                    // For now, just show detected hands count
-                    setGestures(`Detected Hands: ${results.multiHandLandmarks.length}`);
+                    const msg = `Detected hands: ${results.multiHandLandmarks.length}`;
+                    if (onGesturesChange) onGesturesChange(msg);
                 }
             } else {
-                setGestures("No hands detected");
+                if (onGesturesChange) onGesturesChange("No hands detected");
             }
 
             ctx.restore();
@@ -87,11 +82,9 @@ const CameraFeed = () => {
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
 
-                    // Wait until video metadata is loaded
                     videoRef.current.onloadedmetadata = () => {
                         videoRef.current.play();
 
-                        // Start frame loop after video is ready
                         const processFrame = async () => {
                             if (handsRef.current) {
                                 await handsRef.current.send({ image: videoRef.current });
@@ -104,12 +97,13 @@ const CameraFeed = () => {
                 }
             } catch (err) {
                 console.error("Error accessing camera: ", err);
+                if (onGesturesChange) onGesturesChange("Error accessing camera");
             }
         };
 
         startCamera();
 
-        // Cleanup on unmount
+        // Cleanup
         return () => {
             if (videoRef.current && videoRef.current.srcObject) {
                 const tracks = videoRef.current.srcObject.getTracks();
@@ -117,29 +111,22 @@ const CameraFeed = () => {
             }
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
         };
-    }, []);
+    }, [onGesturesChange]);
 
     return (
-        <div>
-            <h2>Live Camera Feed + Hand Detection</h2>
+        <>
             <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
-                style={{ display: "none" }} // hide video, show canvas
+                style={{ display: "none" }} // still hidden, we only show the canvas
             />
             <canvas
                 ref={canvasRef}
-                style={{
-                    width: "640px",
-                    borderRadius: "12px",
-                    backgroundColor: "#1e1e1e", // subtle backdrop so you can see the rounded edges
-                    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.6)", // shadow that separates it from background
-                }}
+                className={canvasClassName}
             />
-            <div style={{marginTop: "10px", fontSize: "18px"}}>{gestures}</div>
-        </div>
+        </>
     );
 };
 
