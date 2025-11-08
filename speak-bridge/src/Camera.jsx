@@ -6,7 +6,7 @@ const CameraFeed = () => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const handsRef = useRef(null);
-    const requestRef = useRef(null);
+    const requestRef = useRef(null);    
     const [gestures, setGestures] = useState("");
 
     useEffect(() => {
