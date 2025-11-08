@@ -107,6 +107,7 @@ const CameraFeed = () => {
             }
         };
 
+        // start camera
         startCamera();
 
         // Cleanup on unmount
