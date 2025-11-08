@@ -1,5 +1,5 @@
-fastapi
-uvicorn
-python-dotenv
-requests
-python-multipart
+fastapi==0.115.5
+uvicorn[standard]==0.32.0
+python-dotenv==1.0.1
+requests==2.32.3
+starlette==0.41.2
