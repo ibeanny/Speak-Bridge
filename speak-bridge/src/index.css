@@ -5,6 +5,78 @@
 
 @import "tailwindcss";
 
+
+
+/* ============================
+   PURPLE SQUARE FIRE BACKGROUND
+   ============================ */
+
+/* Each square: rises up and fades out */
+@keyframes purpleSquareRise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+  }
+  60% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-115vh) scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* Container that holds all the squares */
+.purple-fire {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Base style for each "ember" square.
+   Color, size, delay, and duration are set per-square inline in React. */
+.purple-fire span {
+  position: absolute;
+  bottom: -3rem; /* start slightly off-screen */
+  opacity: 0;
+  border-radius: 4px; /* soft-corner pixels */
+  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.7));
+  animation-name: purpleSquareRise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+
+@keyframes purpleFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Background for the whole page:
+   - Big soft gradients
+   - Slowly shifting left/right */
+.bg-animated-purple {
+  background-image:
+          radial-gradient(circle at 0% 0%, #3b0b5f 0, transparent 50%),
+          radial-gradient(circle at 100% 0%, #6d28d9 0, transparent 55%),
+          radial-gradient(circle at 0% 100%, #4c1d95 0, transparent 55%),
+          radial-gradient(circle at 100% 100%, #a855f7 0, transparent 50%),
+          radial-gradient(circle at 50% 50%, #1a1028 0, #030014 55%, #050013 100%);
+  background-size: 200% 200%;
+  animation: purpleFlow 18s ease-in-out infinite;
+}
+
+
 @theme {
   --color-primary: #030014;
 
