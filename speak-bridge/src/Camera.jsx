@@ -1,55 +1,45 @@
 import { useEffect, useRef } from "react";
 
-const CameraFeed = () =>{
+const CameraFeed = () => {
+  const videoRef = useRef(null);
 
-    const videoRef = useRef(null)
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false,
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error("Error accessing the camera:", err);
+    }
+  };
 
-    useEffect(() =>{
+  useEffect(() => {
+    startCamera(); // automatically start the camera when component mounts
 
-        const startCamera = async ()=>{
-            try{
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video : true,
-                    audio : false,
-                })
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const tracks = videoRef.current.srcObject.getTracks();
+        tracks.forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
-                if(videoRef.current){
-                    videoRef.current.srcObject = stream;
-
-                }
-            }catch(err){
-                console.error("Error accessing the camera: ", err)
-            }  
-
-        };
-        startCamera();
-
-        return () =>{
-            if(videoRef.current && videoRef.current.srcObject){
-                const tracks = videoRef.current.srcObject.getTracks();
-                tracks.forEach((track) => track.stop());
-            }
-        };
-
-
-    }, []);
-
-
-
-
-
-    return (
-        <div>
-            <h2>Live Camera Feed</h2>
-            <video ref = {videoRef}
-            autoPlay
-            playsInline
-            muted
-            style={{width :"600px", borderRadius :"10px"}}
-            />
-
-        </div>
-    );
+  return (
+    <div id="camera-container">
+      <video
+        ref={videoRef}
+        id="camera"
+        autoPlay
+        playsInline
+        muted
+        style={{ width: "350px", borderRadius: "10px" }}
+      />
+    </div>
+  );
 };
 
-export default CameraFeed;  
+export default CameraFeed;
