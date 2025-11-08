@@ -23,7 +23,7 @@ function App() {
 
   // This will eventually hold the translated sign language text
   // For now, it just uses the placeholder
-  const [outputText] = useState(placeholderText);
+  const [outputText, setOutputText] = useState(placeholderText);
 
   // Pre-generate square configs so they don't change every re-render
   const squares = useMemo(() => {
@@ -129,6 +129,7 @@ function App() {
                 <div className="aspect-[4/3] bg-black/60 flex items-center justify-center">
                   <CameraFeed
                     onGesturesChange={setHandStatus} // updates handStatus text
+                    onRecognizedText={setOutputText}
                     canvasClassName="w-full h-full rounded-none" // styles for overlay canvas
                   />
                 </div>
@@ -191,5 +192,4 @@ function App() {
     </div>
   );
 }
-
 export default App;
