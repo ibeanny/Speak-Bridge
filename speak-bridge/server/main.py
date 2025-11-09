@@ -22,7 +22,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Speak-Bridge Backend (Public Stream)")
 
-# ---- CORS ----
+# CORS 
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
 origins = [o.strip() for o in allowed_origins.split(",")] if allowed_origins else ["*"]
 app.add_middleware(
@@ -33,7 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ---- Prevent caching of latest.png ----
+#  Prevent caching of latest.png
 class NoCacheLatest(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         resp = await call_next(request)
@@ -46,13 +46,13 @@ class NoCacheLatest(BaseHTTPMiddleware):
 app.add_middleware(NoCacheLatest)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# ---- Health check ----
+#  Health check 
 @app.get("/health")
 def health():
     return {"ok": True, "time": int(time.time())}
 
 
-# ---- NeuralSeek endpoints (existing) ----
+# Upload ASL frame endpoint
 @app.post("/api/stream/frame")
 async def upload_frame(frame: UploadFile = File(...)):
     data = await frame.read()
@@ -79,19 +79,16 @@ async def stream_frame(frame: UploadFile = File(...), prior_hypothesis: str = Fo
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
-# ---- New Eleven Labs TTS endpoint ----
+#Generate speech thorugh Eleven Labs
 @app.post("/api/speak")
 async def speak(text: str = Form(...)):
-    """
-    Generate speech from text using Eleven Labs and return audio.
-    """
     try:
         audio_bytes = generate_speech(text)
         return StreamingResponse(BytesIO(audio_bytes), media_type="audio/mpeg")
     except Exception as e:
         return PlainTextResponse(str(e), status_code=500)
 
-# ---- Run server ----
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

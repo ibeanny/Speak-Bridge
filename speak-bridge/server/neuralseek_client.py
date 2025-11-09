@@ -14,11 +14,8 @@ MAISTRO_STREAM_URL = os.getenv(
     "https://stagingapi.neuralseek.com/v1/stony7/maistro_stream",
 )
 
+#stream ASL frame to NeuralSeek and yield text events
 def stream_frame_png(png_bytes: bytes, prior_hypothesis: str = ""):
-    """
-    Streams ASL frames to NeuralSeek using your staging endpoint.
-    Expects env vars set in .env.
-    """
     if not API_KEY:
         yield "[NeuralSeek config error] Missing NEURALSEEK_API_KEY"
         return

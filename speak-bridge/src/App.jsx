@@ -148,8 +148,8 @@ function App() {
         >
           <div className="flex items-center gap-2 py-1">
             <img
-              src="/src/assets/icon.png"
-              alt="SpeakBridge Icon"
+              src="/src/assets/logo.png"
+              alt="SpeakBridge Logo"
               className={
                 "h-10 w-10 rounded-xl " +
                 (isDark
