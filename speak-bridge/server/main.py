@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.datastructures import UploadFile as StarletteUploadFile
 from neuralseek_client import stream_frame_png
+from eleven_labs_client import generate_speech
 
 BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "static"
@@ -72,6 +73,17 @@ async def stream_frame(frame: UploadFile = File(...), prior_hypothesis: str = Fo
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
+# ---- New Eleven Labs TTS endpoint ----
+@app.post("/api/speak")
+async def speak(text: str = Form(...)):
+    """
+    Generate speech from text using Eleven Labs and return audio.
+    """
+    try:
+        audio_bytes = generate_speech(text)
+        return StreamingResponse(BytesIO(audio_bytes), media_type="audio/mpeg")
+    except Exception as e:
+        return PlainTextResponse(str(e), status_code=500)
 
 if __name__ == "__main__":
     import uvicorn

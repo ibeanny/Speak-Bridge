@@ -14,26 +14,76 @@ const PURPLE_COLORS = [
 ];
 
 function App() {
-  // Text shown before any sign language is translated
+
   const placeholderText =
     "No translation yet. This will show recognized sign language as text.\n  Place your hands in view of the camera to start translating sign language";
 
-  // Tracks what the camera thinks your hands are doing
+
   const [handStatus, setHandStatus] = useState("Waiting for hand signs…");
-
-  // This will eventually hold the translated sign language text
-  // For now, it just uses the placeholder
   const [outputText, setOutputText] = useState(placeholderText);
-
-  // Theme state: "dark" (current look) or "light"
   const [theme, setTheme] = useState("dark");
   const isDark = theme === "dark";
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
+  const audioRef = useRef(new Audio());
 
-  // Pre-generate square configs so they don't change every re-render
+    // Function to request speech from backend
+    const playSpeech = async () => {
+      if (!outputText || outputText === placeholderText || isSpeaking) {
+        console.log("Speech blocked:", { hasText: !!outputText, isPlaceholder: outputText === placeholderText, isSpeaking });
+        return;
+      }
+
+      try {
+        setIsSpeaking(true);
+        console.log("Requesting speech for:", outputText);
+
+        const formData = new FormData();
+        formData.append("text", outputText);
+
+        const response = await fetch("http://127.0.0.1:8000/api/speak", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Server error: ${errorText}`);
+        }
+
+        const blob = await response.blob();
+        console.log("Received audio blob:", blob.size, "bytes");
+
+        const audioURL = URL.createObjectURL(blob);
+
+        // Clean up previous audio URL
+        if (audioRef.current.src) {
+          URL.revokeObjectURL(audioRef.current.src);
+        }
+
+        audioRef.current.src = audioURL;
+        audioRef.current.onended = () => {
+          console.log("Audio playback ended");
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioURL);
+        };
+        audioRef.current.onerror = (e) => {
+          console.error("Audio playback error:", e);
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioURL);
+        };
+
+        await audioRef.current.play();
+        console.log("Audio playback started");
+      } catch (err) {
+        console.error("Speech error:", err);
+        alert(`Speech Error: ${err.message}`);
+        setIsSpeaking(false);
+      }
+    };
+
   const squares = useMemo(() => {
     return Array.from({ length: SQUARE_COUNT }).map((_, i) => {
       const left = Math.random() * 100; // 0–100% horizontally
