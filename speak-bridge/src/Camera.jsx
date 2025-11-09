@@ -26,7 +26,7 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
   // Refs to control backend communication
   const lastSentRef = useRef(0);      // Last time a frame was sent
   const isSendingRef = useRef(false); // Prevent overlapping fetch calls
-  const streamAbortRef = useRef(null); // 🔹 ADDED: to cancel prior SSE stream
+  const streamAbortRef = useRef(null); // ADDED: to cancel prior SSE stream
 
   // UI state showing what the system detects
   const [gestures, setGestures] = useState("Starting camera...");
