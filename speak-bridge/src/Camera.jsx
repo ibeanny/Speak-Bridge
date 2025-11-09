@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from "react";
 import { Hands } from "@mediapipe/hands";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
-const FRAME_SEND_INTERVAL_MS = 200; // send ~1.25 frames per second
-
-// 🔹 ADDED: configurable API base (falls back to localhost)
+const FRAME_SEND_INTERVAL_MS = 100; // min gap between sends
 const API_BASE = import.meta.env?.VITE_API_BASE || "http://localhost:8000";
 
-// Landmark connection pairs that define the hand "skeleton"
+// ---- New motion-gating constants ----
+const MOTION_STILL_THRESH = 0.006;   // ~0.6% of frame diagonal
+const MOTION_MOVE_THRESH  = 0.012;   // ~1.2% of frame diagonal (hysteresis)
+const STABLE_FRAMES_REQUIRED = 3;    // need N consecutive “still” frames
 const HAND_CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,4],
   [0,5],[5,6],[6,7],[7,8],
@@ -16,37 +17,32 @@ const HAND_CONNECTIONS = [
   [0,17],[17,18],[18,19],[19,20],
 ];
 
-export default function CameraFeed({ onGesturesChange, canvasClassName, onRecognizedText }) { // 🔹 ADDED onRecognizedText in signature
-  // Refs for HTML elements and internal state
-  const videoRef = useRef(null);     // <video> element (hidden)
-  const canvasRef = useRef(null);    // <canvas> for drawing output
-  const handsRef = useRef(null);     // MediaPipe Hands instance
-  const requestRef = useRef(null);   // requestAnimationFrame ID
+export default function CameraFeed({ onGesturesChange, canvasClassName, onRecognizedText }) {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const handsRef = useRef(null);
+  const requestRef = useRef(null);
 
-  // Refs to control backend communication
-  const lastSentRef = useRef(0);      // Last time a frame was sent
-  const isSendingRef = useRef(false); // Prevent overlapping fetch calls
-  const streamAbortRef = useRef(null); // 🔹 ADDED: to cancel prior SSE stream
+  const lastSentRef = useRef(0);
+  const isSendingRef = useRef(false);
+  const streamAbortRef = useRef(null);
 
-  // UI state showing what the system detects
   const [gestures, setGestures] = useState("Starting camera...");
 
-  /**
-   * Sends a single frame to the backend.
-   * - Converts the canvas to a PNG blob
-   * - Sends it via POST to API_BASE
-   * - Uses throttle + non-blocking behavior to avoid lag
-   * - 🔹 ADDED: Starts SSE stream and appends tokens to onRecognizedText
-   */
-   const getScaledBlob = (canvas, maxW = 640, maxH = 480, mime = "image/png", quality = 0.9) =>
-     new Promise((resolve) => {
-       const tmp = document.createElement("canvas");
-       const s = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
-       tmp.width = Math.round(canvas.width * s);
-       tmp.height = Math.round(canvas.height * s);
-       tmp.getContext("2d").drawImage(canvas, 0, 0, tmp.width, tmp.height);
-       tmp.toBlob((blob) => resolve(blob), mime, quality);
-     });
+  // ---- Motion tracking state ----
+  const prevLandmarksRef = useRef(null);      // [{x,y,z}[] per hand] from prior frame
+  const stableRunRef = useRef(0);             // consecutive still frames
+  const isCurrentlyStillRef = useRef(false);  // hysteresis state
+
+  const getScaledBlob = (canvas, maxW = 640, maxH = 480, mime = "image/png", quality = 0.9) =>
+    new Promise((resolve) => {
+      const tmp = document.createElement("canvas");
+      const s = Math.min(maxW / canvas.width, maxH / canvas.height, 1);
+      tmp.width = Math.round(canvas.width * s);
+      tmp.height = Math.round(canvas.height * s);
+      tmp.getContext("2d").drawImage(canvas, 0, 0, tmp.width, tmp.height);
+      tmp.toBlob((blob) => resolve(blob), mime, quality);
+    });
 
   const sendFrameToBackend = async (canvas) => {
     if (!canvas) return;
@@ -54,21 +50,19 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
     isSendingRef.current = true;
 
     try {
-      // use the **downscaled** blob
       const blob = await getScaledBlob(canvas, 640, 480, "image/png", 0.9);
       if (!blob) return;
 
       const fd = new FormData();
       fd.append("frame", blob, "frame.png");
 
-      // (keep) update latest.png for debugging
+      // update latest.png for debugging (fire-and-forget)
       fetch(`${API_BASE}/api/stream/frame`, { method: "POST", body: fd })
         .catch((err) => console.warn("Failed to send frame:", err));
 
-      // clear textbox at the start of a new stream
-      onRecognizedText?.("");
+      onRecognizedText?.(""); // clear textbox
 
-      // abort prior stream to avoid overlap
+      // cancel any previous SSE stream
       try { streamAbortRef.current?.abort(); } catch {}
       streamAbortRef.current = new AbortController();
 
@@ -78,14 +72,12 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
         signal: streamAbortRef.current.signal,
       });
 
-      // if server rejected, show the reason in the textbox and bail
       if (!res.ok) {
         const body = await res.text();
         onRecognizedText?.((prev) => (prev || "") + `\n[stream http ${res.status}] ${body.slice(0, 400)}`);
         return;
       }
 
-      // stream tokens
       const reader = res.body?.getReader?.();
       if (!reader) {
         onRecognizedText?.((p) => (p || "") + "\n[stream error] Reader not available (browser issue)");
@@ -94,7 +86,6 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
 
       const decoder = new TextDecoder();
       let buffer = "";
-
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -106,10 +97,8 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
         for (const part of parts) {
           if (part.startsWith("data: ")) {
             const token = part.slice(6);
-
             let text = token;
             try {
-              // outer could be {"answer":"{...json...}"} or already plain text
               const outer = JSON.parse(token);
               let payload = outer?.answer ?? outer;
               if (typeof payload === "string") {
@@ -123,9 +112,8 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
                 text = String(payload ?? token);
               }
             } catch {
-              // token wasn’t JSON — leave as-is
+              // not JSON; leave token as-is
             }
-
             onRecognizedText?.((prev) => (prev ? prev + "\n" + text : text));
           }
         }
@@ -141,19 +129,50 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
     }
   };
 
-  /**
-   * useEffect runs once after mount:
-   * - Initializes MediaPipe Hands
-   * - Requests camera access
-   * - Starts a continuous frame detection loop
-   */
+  // ---- Compute normalized motion between frames ----
+  function computeMotionMagnitude(landmarksPerHand, width, height) {
+    // If no previous landmarks, seed and return high motion to avoid sending immediately
+    if (!prevLandmarksRef.current) {
+      prevLandmarksRef.current = landmarksPerHand?.map(hand => hand.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0 }))) || null;
+      return Infinity;
+    }
+
+    const prev = prevLandmarksRef.current;
+    // Match by index (MediaPipe keeps consistent ordering for hands within a session reasonably well)
+    const handCount = Math.min(prev.length, landmarksPerHand.length);
+    if (handCount === 0) {
+      prevLandmarksRef.current = null;
+      return Infinity;
+    }
+
+    const diag = Math.hypot(width, height) || 1; // normalize to frame diagonal
+    let accum = 0;
+    let points = 0;
+
+    for (let h = 0; h < handCount; h++) {
+      const A = prev[h];
+      const B = landmarksPerHand[h];
+      const n = Math.min(A.length, B.length);
+      for (let i = 0; i < n; i++) {
+        const dx = (B[i].x - A[i].x) * width;
+        const dy = (B[i].y - A[i].y) * height;
+        const d = Math.hypot(dx, dy) / diag; // normalized 0..~1
+        accum += d;
+        points += 1;
+      }
+    }
+
+    // Update previous for next round (copy by value)
+    prevLandmarksRef.current = landmarksPerHand.map(hand => hand.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0 })));
+
+    return points ? (accum / points) : Infinity; // average normalized displacement per landmark
+  }
+
   useEffect(() => {
-    // Initialize MediaPipe Hands model
     handsRef.current = new Hands({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
 
-    // Model configuration
     handsRef.current.setOptions({
       maxNumHands: 2,
       modelComplexity: 1,
@@ -161,43 +180,29 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
       minTrackingConfidence: 0.5,
     });
 
-    /**
-     * MediaPipe callback when a new frame is processed.
-     * - Draws the mirrored camera image
-     * - Renders detected hands and bounding boxes
-     * - Sends frames to backend (throttled)
-     */
     handsRef.current.onResults((results) => {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       const video = videoRef.current;
       if (!video) return;
 
-      // Match canvas to video size
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
-      // Mirror horizontally (selfie style)
       ctx.save();
       ctx.scale(-1, 1);
       ctx.translate(-canvas.width, 0);
 
-      // Clear old frame + draw current camera image
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
 
-      // If any hands detected
       if (results.multiHandLandmarks?.length > 0) {
         results.multiHandLandmarks.forEach((lm, idx) => {
-          // Draw lines and points for hand skeleton
           drawConnectors(ctx, lm, HAND_CONNECTIONS, { color: "#00FF88", lineWidth: 4 });
           drawLandmarks(ctx, lm, { color: "#FF3355", lineWidth: 2 });
 
-          // Get confidence of the detected hand
           if (results.multiHandedness && results.multiHandedness[idx]) {
-            const confidence = results.multiHandedness[idx].score; // value between 0–1
-
-            // Compute bounding box for the hand
+            const confidence = results.multiHandedness[idx].score;
             const xs = lm.map(p => p.x * canvas.width);
             const ys = lm.map(p => p.y * canvas.height);
             const minX = Math.min(...xs);
@@ -205,32 +210,26 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
             const minY = Math.min(...ys);
             const maxY = Math.max(...ys);
 
-            const boxWidth = maxX - minX;
-            const boxHeight = maxY - minY;
-
-            // Draw yellow box around the hand
             ctx.strokeStyle = "yellow";
             ctx.lineWidth = 2;
-            ctx.strokeRect(minX, minY, boxWidth, boxHeight);
+            ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
 
-            // Confidence bar above the box
-            const barWidth = boxWidth * confidence;
+            const barWidth = (maxX - minX) * confidence;
             const barHeight = 6;
 
             ctx.fillStyle = "rgba(0,0,0,0.5)";
-            ctx.fillRect(minX, minY - barHeight - 2, boxWidth, barHeight);
+            ctx.fillRect(minX, minY - barHeight - 2, maxX - minX, barHeight);
 
             ctx.fillStyle = "yellow";
             ctx.fillRect(minX, minY - barHeight - 2, barWidth, barHeight);
 
-            // ---- FIX: Draw readable % text (not mirrored) ----
-            const visualLeft = canvas.width - maxX; // mirrored X position
+            const visualLeft = canvas.width - maxX;
             const textX = visualLeft + 4;
             const textY = minY - barHeight - 6;
             const text = `${(confidence * 100).toFixed(1)}%`;
 
             ctx.save();
-            ctx.setTransform(1, 0, 0, 1, 0, 0); // reset mirror
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.fillStyle = "white";
             ctx.font = "12px Arial";
             ctx.fillText(text, textX, textY);
@@ -238,44 +237,66 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
           }
         });
 
-        // Update detected hand count in UI
         const msg = `Detected Hands: ${results.multiHandLandmarks.length}`;
         setGestures(msg);
         onGesturesChange?.(msg);
 
-        // Only send a frame to the backend sometimes (throttled)
-        // This does NOT affect detection framerate, just network load
+        // ---- Motion gating logic ----
+        const motion = computeMotionMagnitude(
+          results.multiHandLandmarks,
+          canvas.width,
+          canvas.height
+        );
+
+        // Hysteresis: once still, allow a bit more motion before flipping back to "moving"
+        if (isCurrentlyStillRef.current) {
+          if (motion > MOTION_MOVE_THRESH) {
+            isCurrentlyStillRef.current = false;
+            stableRunRef.current = 0;
+          } else {
+            // still remains still
+            stableRunRef.current = Math.min(STABLE_FRAMES_REQUIRED, stableRunRef.current + 1);
+          }
+        } else {
+          if (motion <= MOTION_STILL_THRESH) {
+            // candidate still
+            stableRunRef.current += 1;
+            if (stableRunRef.current >= STABLE_FRAMES_REQUIRED) {
+              isCurrentlyStillRef.current = true;
+            }
+          } else {
+            stableRunRef.current = 0;
+          }
+        }
+
+        // Only send if: (1) currently considered still, (2) we’ve met the interval
         const now = performance.now();
-        if (now - lastSentRef.current > FRAME_SEND_INTERVAL_MS) {
+        const canSendByTime = now - lastSentRef.current > FRAME_SEND_INTERVAL_MS;
+        if (isCurrentlyStillRef.current && canSendByTime) {
           lastSentRef.current = now;
           sendFrameToBackend(canvas);
         }
+
       } else {
-        // No hands found
+        // No hands
+        prevLandmarksRef.current = null;     // reset motion baseline
+        stableRunRef.current = 0;
+        isCurrentlyStillRef.current = false;
+
         const msg = "No hands detected";
         setGestures(msg);
         onGesturesChange?.(msg);
       }
 
-      // Undo mirror transform
       ctx.restore();
     });
 
-    /**
-     * Ask for webcam access and start MediaPipe loop.
-     * Each frame → sent to `handsRef.current.send()`.
-     */
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
           videoRef.current.play();
-
-          // Recursive loop for continuous detection
           const loop = async () => {
             await handsRef.current.send({ image: videoRef.current });
             requestRef.current = requestAnimationFrame(loop);
@@ -290,26 +311,16 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
       }
     })();
 
-    // Cleanup when component unmounts
     return () => {
-      try { streamAbortRef.current?.abort(); } catch {} // 🔹 ADDED
+      try { streamAbortRef.current?.abort(); } catch {}
       cancelAnimationFrame(requestRef.current);
       videoRef.current?.srcObject?.getTracks().forEach((t) => t.stop());
     };
-  }, [onGesturesChange, onRecognizedText]); // 🔹 ADDED onRecognizedText dep
+  }, [onGesturesChange, onRecognizedText]);
 
   return (
     <div>
-      {/* Hidden video: used as MediaPipe input */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{ display: "none" }}
-      />
-
-      {/* Canvas: visible camera + overlays */}
+      <video ref={videoRef} autoPlay playsInline muted style={{ display: "none" }} />
       <canvas
         ref={canvasRef}
         className={canvasClassName}

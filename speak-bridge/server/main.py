@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-
+from starlette.datastructures import UploadFile as StarletteUploadFile
 from neuralseek_client import stream_frame_png
 
 BASE_DIR = Path(__file__).parent.resolve()
