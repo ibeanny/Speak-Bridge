@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Hands } from "@mediapipe/hands";
 import { drawConnectors, drawLandmarks } from "@mediapipe/drawing_utils";
 
-const FRAME_SEND_INTERVAL_MS = 1600; // send ~1.25 frames per second
+const FRAME_SEND_INTERVAL_MS = 200; // send ~1.25 frames per second
 
 // 🔹 ADDED: configurable API base (falls back to localhost)
 const API_BASE = import.meta.env?.VITE_API_BASE || "http://localhost:8000";
@@ -106,7 +106,27 @@ export default function CameraFeed({ onGesturesChange, canvasClassName, onRecogn
         for (const part of parts) {
           if (part.startsWith("data: ")) {
             const token = part.slice(6);
-            onRecognizedText?.((prev) => (typeof prev === "string" ? prev + token : token));
+
+            let text = token;
+            try {
+              // outer could be {"answer":"{...json...}"} or already plain text
+              const outer = JSON.parse(token);
+              let payload = outer?.answer ?? outer;
+              if (typeof payload === "string") {
+                try { payload = JSON.parse(payload); } catch {}
+              }
+              if (payload && typeof payload === "object") {
+                const gloss = payload.gloss ?? "UNKNOWN";
+                const conf = typeof payload.confidence === "number" ? Math.round(payload.confidence * 100) : null;
+                text = conf != null ? `${gloss} (${conf}%)` : gloss;
+              } else {
+                text = String(payload ?? token);
+              }
+            } catch {
+              // token wasn’t JSON — leave as-is
+            }
+
+            onRecognizedText?.((prev) => (prev ? prev + "\n" + text : text));
           }
         }
       }
