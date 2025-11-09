@@ -4,7 +4,7 @@ Real-time **ASL → speech** demo with a React (Vite) frontend and a FastAPI bac
 
 ---
 
-## What’s inside
+## ✨ What’s inside
 
 - **Frontend:** React 19 + Vite, Tailwind v4 (`@tailwindcss/vite`), MediaPipe Hands for landmark detection.  
 - **Backend:** FastAPI with CORS, static file hosting, **SSE streaming** to NeuralSeek, and a `/api/speak` endpoint using **ElevenLabs** TTS.  
@@ -12,7 +12,7 @@ Real-time **ASL → speech** demo with a React (Vite) frontend and a FastAPI bac
 
 ---
 
-## Project layout (key files)
+## 🗂 Project layout (key files)
 
 Speak-Bridge/
 ├── package.json
@@ -32,7 +32,7 @@ Speak-Bridge/
 
 ---
 
-## Architecture
+## 🧭 Architecture
 
 Camera (browser) → MediaPipe Hands → PNG frame → FastAPI
 │
@@ -44,11 +44,11 @@ Text → POST /api/speak → ElevenLabs → MP3 stream → audio playback
 
 ---
 
- Environment variables
+## 🔑 Environment variables
 
-Create 'speak-bridge/server/.env`:
+Create `speak-bridge/server/.env`:
 
-``ini
+```ini
 # CORS
 ALLOWED_ORIGINS=http://localhost:5173
 
@@ -61,8 +61,7 @@ NEURALSEEK_AGENT_ID=your_agent_id
 # NEURALSEEK_STREAM_URL=https://stagingapi.neuralseek.com/v1/<tenant>/maistro_stream
 
 # ElevenLabs
-ELEVENLABS_API_KEY=your_elevenlabs_key 
-
+ELEVENLABS_API_KEY=your_elevenlabs_key
 Create optional speak-bridge/.env for the frontend:
 VITE_API_BASE=http://localhost:8000
 Running locally
@@ -86,7 +85,6 @@ cd speak-bridge
 npm install
 npm run dev
 # → http://localhost:5173
-
 🔌 How the NeuralSeek stream works
 neuralseek_client.py posts your PNG (base64) to maistro_stream:
 {
@@ -102,8 +100,8 @@ Accept: text/event-stream
 The backend yields data: lines; frontend parses JSON like:
 
 { "gloss": "HELLO", "confidence": 0.82 }
-
 ElevenLabs TTS
+
 /api/speak uses your ElevenLabs key:
 voice → Rachel
 model → eleven_multilingual_v2
