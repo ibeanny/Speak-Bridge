@@ -29,7 +29,7 @@ def stream_frame_png(png_bytes: bytes, prior_hypothesis: str = ""):
         "Accept": "text/event-stream",
     }
 
-    # ✅ convert to data URL
+    # convert to data URL
     b64 = base64.b64encode(png_bytes).decode("ascii")
     data_url = f"data:image/png;base64,{b64}"
 

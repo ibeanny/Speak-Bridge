@@ -1,95 +1,93 @@
-import { useState, useMemo } from "react";
-import CameraFeed from "./Camera"; // custom camera component
+import { useState, useMemo, useRef } from "react";
+import CameraFeed from "./Camera";
 
-// How many floating squares you want
 const SQUARE_COUNT = 80;
 
-// Purple shades to pick from
 const PURPLE_COLORS = [
-  "#a855f7", // bright purple
-  "#7c3aed", // deep purple
-  "#c4b5fd", // soft lavender
-  "#d8b4fe", // pale pinky purple
-  "#4c1d95", // dark indigo
+  "#a855f7",
+  "#7c3aed",
+  "#c4b5fd",
+  "#d8b4fe",
+  "#4c1d95",
 ];
 
 function App() {
-
   const placeholderText =
-    "No translation yet. This will show recognized sign language as text.\n  Place your hands in view of the camera to start translating sign language";
-
+    "No translation yet. This will show recognized sign language as text.\nPlace your hands in view of the camera to start translating sign language";
 
   const [handStatus, setHandStatus] = useState("Waiting for hand signs…");
   const [outputText, setOutputText] = useState(placeholderText);
   const [theme, setTheme] = useState("dark");
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  
   const isDark = theme === "dark";
+  const audioRef = useRef(new Audio());
+
+  // Function to request speech from backend
+  const playSpeech = async () => {
+    if (!outputText || outputText === placeholderText || isSpeaking) {
+      console.log("Speech blocked:", { hasText: !!outputText, isPlaceholder: outputText === placeholderText, isSpeaking });
+      return;
+    }
+
+    try {
+      setIsSpeaking(true);
+      console.log("Requesting speech for:", outputText);
+
+      const formData = new FormData();
+      formData.append("text", outputText);
+
+      const response = await fetch("http://127.0.0.1:8000/api/speak", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server error: ${errorText}`);
+      }
+
+      const blob = await response.blob();
+      console.log("Received audio blob:", blob.size, "bytes");
+      
+      const audioURL = URL.createObjectURL(blob);
+
+      // Clean up previous audio URL
+      if (audioRef.current.src) {
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+
+      audioRef.current.src = audioURL;
+      audioRef.current.onended = () => {
+        console.log("Audio playback ended");
+        setIsSpeaking(false);
+        URL.revokeObjectURL(audioURL);
+      };
+      audioRef.current.onerror = (e) => {
+        console.error("Audio playback error:", e);
+        setIsSpeaking(false);
+        URL.revokeObjectURL(audioURL);
+      };
+
+      await audioRef.current.play();
+      console.log("Audio playback started");
+    } catch (err) {
+      console.error("Speech error:", err);
+      alert(`Speech Error: ${err.message}`);
+      setIsSpeaking(false);
+    }
+  };
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
-  const audioRef = useRef(new Audio());
-
-    // Function to request speech from backend
-    const playSpeech = async () => {
-      if (!outputText || outputText === placeholderText || isSpeaking) {
-        console.log("Speech blocked:", { hasText: !!outputText, isPlaceholder: outputText === placeholderText, isSpeaking });
-        return;
-      }
-
-      try {
-        setIsSpeaking(true);
-        console.log("Requesting speech for:", outputText);
-
-        const formData = new FormData();
-        formData.append("text", outputText);
-
-        const response = await fetch("http://127.0.0.1:8000/api/speak", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Server error: ${errorText}`);
-        }
-
-        const blob = await response.blob();
-        console.log("Received audio blob:", blob.size, "bytes");
-
-        const audioURL = URL.createObjectURL(blob);
-
-        // Clean up previous audio URL
-        if (audioRef.current.src) {
-          URL.revokeObjectURL(audioRef.current.src);
-        }
-
-        audioRef.current.src = audioURL;
-        audioRef.current.onended = () => {
-          console.log("Audio playback ended");
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioURL);
-        };
-        audioRef.current.onerror = (e) => {
-          console.error("Audio playback error:", e);
-          setIsSpeaking(false);
-          URL.revokeObjectURL(audioURL);
-        };
-
-        await audioRef.current.play();
-        console.log("Audio playback started");
-      } catch (err) {
-        console.error("Speech error:", err);
-        alert(`Speech Error: ${err.message}`);
-        setIsSpeaking(false);
-      }
-    };
 
   const squares = useMemo(() => {
     return Array.from({ length: SQUARE_COUNT }).map((_, i) => {
-      const left = Math.random() * 100; // 0–100% horizontally
-      const size = 10 + Math.random() * 20; // 10–30 px
-      const delay = Math.random() * 8; // 0–8s delay
-      const duration = 6 + Math.random() * 6; // 6–12s rise time
+      const left = Math.random() * 100;
+      const size = 10 + Math.random() * 20;
+      const delay = Math.random() * 8;
+      const duration = 6 + Math.random() * 6;
       const color =
         PURPLE_COLORS[Math.floor(Math.random() * PURPLE_COLORS.length)];
 
@@ -105,18 +103,12 @@ function App() {
   }, []);
 
   return (
-    // ============================
-    // OUTER PAGE CONTAINER
-    // - Full-screen layout
-    // - Custom animated background behind the main card
-    // ============================
     <div
       className={
         "relative min-h-screen flex items-center justify-center px-4 md:px-6 py-6 overflow-hidden " +
         (isDark ? "text-[#f3e9ff]" : "text-slate-900")
       }
     >
-      {/* Dark base background */}
       <div
         className={
           "absolute inset-0 -z-20 " +
@@ -124,7 +116,6 @@ function App() {
         }
       />
 
-      {/* Purple "fire" square effect */}
       <div className="pointer-events-none absolute inset-0 -z-10 purple-fire">
         {squares.map((sq) => (
           <span
@@ -141,11 +132,6 @@ function App() {
         ))}
       </div>
 
-      {/*
-        MAIN APP CARD
-        - The glowing purple box in the middle
-        - Slightly transparent so the background still shows
-      */}
       <div
         className={
           "w-full max-w-6xl overflow-hidden flex flex-col backdrop-blur-sm rounded-2xl border " +
@@ -154,10 +140,6 @@ function App() {
             : "bg-white/90 border-purple-200 shadow-none")
         }
       >
-        {/* ============================
-            HEADER
-            - Icon + app title
-           ============================ */}
         <header
           className={
             "flex items-center justify-between px-4 md:px-6 py-1.5 border-b bg-transparent mt-0 " +
@@ -165,9 +147,8 @@ function App() {
           }
         >
           <div className="flex items-center gap-2 py-1">
-            {/* Logo image (icon.png) */}
             <img
-              src="/src/assets/icon.png" // path to your icon file
+              src="/src/assets/icon.png"
               alt="SpeakBridge Icon"
               className={
                 "h-10 w-10 rounded-xl " +
@@ -177,7 +158,6 @@ function App() {
               }
             />
 
-            {/* App name text */}
             <h1
               className={
                 "m-0 text-xl md:text-2xl font-bold leading-none " +
@@ -188,7 +168,6 @@ function App() {
             </h1>
           </div>
 
-          {/* Theme toggle button (right side of header) */}
           <button
             type="button"
             onClick={toggleTheme}
@@ -203,11 +182,6 @@ function App() {
           </button>
         </header>
 
-        {/* ============================
-            MAIN CONTENT AREA
-            - Left: camera + status
-            - Right: recognized text
-           ============================ */}
         <main
           className={
             "px-4 md:px-6 py-3 min-h-0 flex-1 " +
@@ -215,13 +189,7 @@ function App() {
           }
         >
           <div className="grid md:grid-cols-2 gap-4">
-            {/* ============================
-                LEFT COLUMN
-                - Camera box
-                - Hand status box
-               ============================ */}
             <div className="flex flex-col gap-2">
-              {/* CAMERA BOX */}
               <div
                 className={
                   "rounded-xl overflow-hidden border " +
@@ -230,7 +198,6 @@ function App() {
                     : "bg-white border-purple-200 shadow-none")
                 }
               >
-                {/* Camera header strip */}
                 <div
                   className={
                     "flex items-center justify-between px-3 py-1.5 border-b text-[0.7rem] " +
@@ -255,17 +222,15 @@ function App() {
                   </span>
                 </div>
 
-                {/* Camera feed area */}
                 <div className="aspect-[4/3] bg-black/60 flex items-center justify-center">
                   <CameraFeed
-                    onGesturesChange={setHandStatus} // updates handStatus text
+                    onGesturesChange={setHandStatus}
                     onRecognizedText={setOutputText}
-                    canvasClassName="w-full h-full rounded-none" // styles for overlay canvas
+                    canvasClassName="w-full h-full rounded-none"
                   />
                 </div>
               </div>
 
-              {/* HAND STATUS BOX */}
               <div
                 className={
                   "rounded-lg px-3 py-2 text-sm flex items-center justify-between gap-2 border " +
@@ -274,10 +239,8 @@ function App() {
                     : "bg-purple-50 border-purple-200 text-purple-900 shadow-none")
                 }
               >
-                {/* Text showing what the system sees */}
                 <span className="truncate">{handStatus}</span>
 
-                {/* "Camera Active" pill + pulse dot */}
                 <span
                   className={
                     "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-wide whitespace-nowrap " +
@@ -297,10 +260,6 @@ function App() {
               </div>
             </div>
 
-            {/* ============================
-                RIGHT COLUMN
-                - Recognized / translated text
-               ============================ */}
             <div
               className={
                 "rounded-xl flex flex-col border " +
@@ -309,7 +268,6 @@ function App() {
                   : "bg-white border-purple-200 shadow-none")
               }
             >
-              {/* Output header strip */}
               <div
                 className={
                   "flex items-center justify-between px-3 py-1.5 border-b text-[0.7rem] " +
@@ -322,27 +280,29 @@ function App() {
                   <span className="h-2 w-2 rounded-full bg-purple-400" />
                   Recognized Text
                 </span>
-                <span
+                <button
+                  onClick={playSpeech}
+                  disabled={isSpeaking || outputText === placeholderText}
                   className={
-                    "uppercase tracking-wide " +
+                    "uppercase tracking-wide flex items-center gap-1 px-2 py-1 rounded transition " +
                     (isDark
-                      ? "text-purple-300/70"
-                      : "text-purple-600 font-semibold")
+                      ? "text-purple-300/70 hover:bg-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                      : "text-purple-600 font-semibold hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed")
                   }
+                  title={outputText === placeholderText ? "No text to speak" : "Click to hear the text"}
                 >
-                  Output
-                </span>
+                  {isSpeaking ? "🔊 Playing..." : "🔊 Speak"}
+                </button>
               </div>
 
-              {/* Output text area */}
-              <div className="px-3 py-3">
+              <div className="px-3 py-3 flex-1 overflow-y-auto">
                 <p
                   className={
                     "whitespace-pre-line text-sm md:text-base leading-relaxed " +
                     (isDark ? "text-purple-100" : "text-slate-900") +
                     (outputText === placeholderText
-                      ? " opacity-60" // faded style when it's just the placeholder
-                      : " opacity-100") // full brightness when it's real output
+                      ? " opacity-60"
+                      : " opacity-100")
                   }
                 >
                   {outputText}
@@ -352,10 +312,6 @@ function App() {
           </div>
         </main>
 
-        {/* ============================
-            FOOTER
-            - Credits line
-           ============================ */}
         <footer
           className={
             "px-4 md:px-6 py-2 border-t text-[0.75rem] text-center bg-transparent " +
@@ -364,7 +320,7 @@ function App() {
               : "border-purple-200 text-slate-600 font-medium")
           }
         >
-          <p>Speak Bridge © 2025 • Made w/ ❤️ by Elvis Ortiz</p>
+          <p>Speak Bridge © 2025 • Made w/ ❤️</p>
         </footer>
       </div>
     </div>

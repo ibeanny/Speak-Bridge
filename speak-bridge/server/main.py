@@ -1,15 +1,20 @@
 import os
 import time
 from pathlib import Path
+from io import BytesIO
 
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.datastructures import UploadFile as StarletteUploadFile
+
 from neuralseek_client import stream_frame_png
 from eleven_labs_client import generate_speech
+
+from dotenv import load_dotenv #For Eleven Labs API Key
+
+load_dotenv(".env") 
 
 BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "static"
@@ -41,12 +46,13 @@ class NoCacheLatest(BaseHTTPMiddleware):
 app.add_middleware(NoCacheLatest)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-
+# ---- Health check ----
 @app.get("/health")
 def health():
     return {"ok": True, "time": int(time.time())}
 
 
+# ---- NeuralSeek endpoints (existing) ----
 @app.post("/api/stream/frame")
 async def upload_frame(frame: UploadFile = File(...)):
     data = await frame.read()
@@ -85,6 +91,7 @@ async def speak(text: str = Form(...)):
     except Exception as e:
         return PlainTextResponse(str(e), status_code=500)
 
+# ---- Run server ----
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

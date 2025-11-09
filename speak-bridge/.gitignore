@@ -24,6 +24,7 @@ __pycache__/
 *.pdb
 *.egg-info/
 *.log
+*.env
 
 # Virtual environments
 .venv/
